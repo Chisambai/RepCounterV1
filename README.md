@@ -21,10 +21,12 @@ Component list:
 - 220 ohm resistor 
 
 The brain of this devices is Arduino UNO. 
+
 Three main inputs are: 
 - Ultrasonic sensor
 - 4x4 membrane keypad
 - push button
+- 
 Three main outputs are: 
 - LCD screen
 - Buzzer 
