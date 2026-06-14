@@ -1,0 +1,317 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Keypad.h>
+
+
+//with opening sound 
+// --- Hardware Pin Definitions ---
+const int trigPin = A0;      
+const int echoPin = A1;      
+const int buttonPin = 10;    
+const int buzzerPin = 11;    
+const int ledPin = 13;       
+
+// --- Keypad Setup ---
+const byte ROWS = 4; 
+const byte COLS = 4; 
+char keys[ROWS][COLS] = {
+  {'1','2','3','A'},
+  {'4','5','6','B'},
+  {'7','8','9','C'},
+  {'*','0','#','D'}
+};
+byte rowPins[ROWS] = {9, 8, 7, 6}; 
+byte colPins[COLS] = {5, 4, 3, 2}; 
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+
+// --- LCD Setup ---
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
+
+// --- System Variables ---
+// NEW: Added STATE_STARTUP to the beginning of the enum
+enum SystemState { STATE_STARTUP, STATE_INPUT, STATE_LIFTING, STATE_RESTING };
+SystemState currentState = STATE_STARTUP; // System now boots into this state
+
+int targetSets = 0;          
+int targetReps = 0;
+int targetRestSeconds = 0;   
+int currentReps = 0;
+int currentSet = 0;
+
+int setTimes[10]; 
+unsigned long setStartTime = 0;
+
+// --- Function Prototypes ---
+void handleStartup(); // NEW
+void readKeypadInput();
+void handleLifting();
+void handleResting();
+void triggerRestAlarm();
+void beep(int duration);
+int getUserInput(String promptText); 
+
+void setup() {
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  
+  pinMode(buttonPin, INPUT_PULLUP); 
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(ledPin, OUTPUT); 
+
+  lcd.init();
+  lcd.backlight();
+  // Removed the basic "System Ready" text from here, 
+  // as the new handleStartup() function will take over immediately.
+}
+
+void loop() {
+  switch (currentState) {
+    case STATE_STARTUP:
+      handleStartup();
+      break;
+
+    case STATE_INPUT:
+      readKeypadInput();
+      break;
+      
+    case STATE_LIFTING:
+      handleLifting();
+      break;
+      
+    case STATE_RESTING:
+      handleResting();
+      break;
+  }
+}
+
+// ==========================================
+// NEW STARTUP PHASE
+// ==========================================
+
+void handleStartup() {
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("POWERING ON...");
+
+  // Super Mario Intro Frequencies (Hz)
+  int E5 = 659;
+  int C5 = 523;
+  int G5 = 784;
+  int G4 = 392;
+
+  // The melody sequence (0 means a brief pause)
+  int melody[] = {E5, E5, 0, E5, 0, C5, E5, 0, G5, 0, G4};
+  int tempos[] = {150, 150, 100, 150, 100, 150, 150, 100, 200, 250, 200};
+
+  // Play the Mario Jingle
+  for (int i = 0; i < 11; i++) {
+    if (melody[i] == 0) {
+      delay(tempos[i]); // Rest
+    } else {
+      tone(buzzerPin, melody[i], tempos[i]);
+      delay(tempos[i] * 1.3); // Add slight spacing between identical notes
+    }
+  }
+  noTone(buzzerPin);
+  delay(500);
+
+  // The Gliding Text Animation
+  // We pad the string with 16 spaces on both sides so it glides smoothly on and off the screen
+  String welcomeMsg = "                Welcome to Rep Counter                ";
+  
+  lcd.clear();
+  for (int i = 0; i <= welcomeMsg.length() - 16; i++) {
+    lcd.setCursor(0, 0);
+    // Print a 16-character window of the string, shifting right by 1 character each loop
+    lcd.print(welcomeMsg.substring(i, i + 16)); 
+    delay(250); // Adjust this delay to make the text scroll faster or slower
+  }
+
+  delay(500);
+  
+  // Transition seamlessly into Phase 1
+  currentState = STATE_INPUT;
+}
+
+
+// ==========================================
+// PHASE 1 FUNCTIONS
+// ==========================================
+
+int getUserInput(String promptText) {
+  String inputStr = "";
+  lcd.clear();
+  lcd.print(promptText);
+  lcd.setCursor(0, 1); 
+
+  while (true) {
+    char key = keypad.getKey();
+
+    if (key) {
+        beep(50);
+      if (key >= '0' && key <= '9') {
+        if (inputStr.length() < 3) { 
+          inputStr += key;
+          lcd.print(key);
+        }
+      } 
+      else if (key == '*') { 
+        if (inputStr.length() > 0) {
+          inputStr.remove(inputStr.length() - 1); 
+          
+          lcd.setCursor(0, 1);
+          lcd.print("                "); 
+          lcd.setCursor(0, 1);
+          lcd.print(inputStr);
+        }
+      } 
+      else if (key == '#') { 
+        if (inputStr.length() > 0) {
+          return inputStr.toInt(); 
+        }
+      }
+    }
+  }
+}
+
+void readKeypadInput() {
+  digitalWrite(ledPin, LOW); 
+  
+  targetSets = getUserInput("TotalSets:(#=OK)");
+  delay(300); 
+  
+  targetReps = getUserInput("Set Reps: (#=OK)");
+  delay(300); 
+  
+  int restMinutes = getUserInput("Rest(min):(#=OK)");
+  targetRestSeconds = restMinutes * 60; 
+  delay(300);
+
+  lcd.clear();
+  lcd.print("Press Button");
+  lcd.setCursor(0, 1);
+  lcd.print("to Start Set 1");
+
+  while(digitalRead(buttonPin) == HIGH) {
+    delay(10); 
+  }
+  beep(200);
+  delay(50); 
+  
+  while(digitalRead(buttonPin) == LOW) {
+    delay(10); 
+  }
+
+  currentSet = 0;
+  currentReps = 0;
+  setStartTime = millis();
+  currentState = STATE_LIFTING;
+}
+
+// ==========================================
+// PHASE 2 & 3 FUNCTIONS
+// ==========================================
+
+void handleLifting() {
+  digitalWrite(ledPin, HIGH); 
+  
+  lcd.clear();
+  lcd.print("Set: ");
+  lcd.print(currentSet + 1); 
+  lcd.print("/");
+  lcd.print(targetSets);
+  
+  lcd.setCursor(0, 1);
+  lcd.print("Reps: ");
+  lcd.print(currentReps);
+  lcd.print("/");
+  lcd.print(targetReps);
+
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000); 
+  int distanceCm = duration * 0.034 / 2;
+
+  if (distanceCm > 0 && distanceCm < 25) { 
+    currentReps++;
+    
+    // Use the basic beep for standard rep tracking
+    beep(100); 
+    
+    lcd.setCursor(6, 1);
+    lcd.print(currentReps);
+    
+    delay(1000); 
+  }
+
+  if (currentReps >= targetReps) {
+    unsigned long timeTaken = (millis() - setStartTime) / 1000;
+    if(currentSet < 10) {
+      setTimes[currentSet] = timeTaken;
+    }
+    
+    currentSet++; 
+
+    if (currentSet >= targetSets) {
+      lcd.clear();
+      lcd.print("WORKOUT DONE!");
+      beep(2000); 
+      delay(3000);
+      currentState = STATE_INPUT; 
+    } else {
+      currentState = STATE_RESTING; 
+    }
+  }
+  
+  delay(50); 
+}
+
+void handleResting() {
+  digitalWrite(ledPin, LOW); 
+  
+  lcd.clear();
+  lcd.print("Resting...");
+
+  unsigned long startRestTime = millis();
+  int timeRemaining = targetRestSeconds;
+
+  while (timeRemaining > 0) {
+    lcd.setCursor(0, 1);
+    lcd.print("Time: ");
+    lcd.print(timeRemaining);
+    lcd.print("s  "); 
+
+    unsigned long currentMillis = millis();
+    if (currentMillis - startRestTime >= 1000) {
+      startRestTime = currentMillis;
+      timeRemaining--;
+    }
+
+    if (digitalRead(buttonPin) == LOW) {
+      delay(300); 
+      currentState = STATE_INPUT; 
+      return; 
+    }
+  }
+
+  triggerRestAlarm();
+  currentReps = 0;
+  setStartTime = millis();
+  currentState = STATE_LIFTING;
+}
+
+void triggerRestAlarm() {
+  lcd.clear();
+  lcd.print("REST OVER!");
+  beep(1500); 
+}
+
+void beep(int duration) {
+  digitalWrite(buzzerPin, HIGH);
+  delay(duration);
+  digitalWrite(buzzerPin, LOW);
+}
