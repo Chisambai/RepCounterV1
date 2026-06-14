@@ -1,11 +1,14 @@
 # RepCounterV1
 Introduction
+
 RepCounter Version 1 is Repitition counter during a workout session. It is a physical prototype that can be use during a workout session. 
 
 Why build RepCounter? 
+
 Sometimes, i would get distracted and lost count my repititions. Lost count repititions mean you either redo the whole set or just finish the set by feel. Other than that, after finishing a set you need to open up your clock app on your phone and set a timer for resting which is a hassle for me. To solve this problem, i build RepCounter. It counts your repitition for each set and a timer after finishing your current set. 
 
 Methodology
+
 Component list:
 - Arduino UNO 
 - Ultrasonic Sensor 
