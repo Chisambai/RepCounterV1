@@ -1,5 +1,5 @@
 # RepCounterV1
-*Introduction*
+#Introduction#
 
 RepCounter Version 1 is Repitition counter during a workout session. It is a physical prototype that can be use during a workout session. 
 
